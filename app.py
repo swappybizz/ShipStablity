@@ -44,6 +44,14 @@ if num_cargo > 0:
 if cargo_list:
     ship.add_cargo(cargo_list)
 
+# Update ship parameters if they have changed
+if ship.length != length or ship.beam != beam or ship.draft != draft or ship.displacement != displacement:
+    ship.length = length
+    ship.beam = beam
+    ship.draft = draft
+    ship.displacement = displacement
+    ship.calculate_hydrostatics()
+
 # Display Hydrostatic Properties
 st.subheader("Hydrostatic Properties")
 st.write(f"**Total Displacement:** {ship.displacement:,.2f} tonnes")
@@ -52,15 +60,14 @@ st.write(f"**Metacentric Height (GM):** {ship.GM:.2f} m")
 if ship.GM <= 0:
     st.error("Warning: The ship is unstable! Metacentric Height (GM) is zero or negative.")
 
-# Righting Arm Calculation
-heel_angles = np.arange(0, 91, 1)  # From 0 to 90 degrees
-GZ_values = [ship.calculate_righting_arm(angle) for angle in heel_angles]
-
 # Sidebar Inputs for Wave Parameters
 st.sidebar.header("Wave Parameters")
 wave_height = st.sidebar.slider("Wave Height (m)", 0.1, 10.0, 2.0)
 wave_length = st.sidebar.slider("Wave Length (m)", 10.0, 500.0, 100.0)
 wave_period = st.sidebar.slider("Wave Period (seconds)", 1.0, 30.0, 10.0)
+
+# Set wave parameters in ship
+ship.set_wave_parameters(wave_height, wave_length, wave_period)
 
 # Initialize session state variables for time tracking
 if "time" not in st.session_state:
@@ -74,34 +81,49 @@ def generate_waveform(wave_height, wave_length, wave_period, time):
     return waveform
 
 # Real-Time Waveform Plot (Automatically updates every second)
-@st.fragment(run_every=1)
+@st.fragment(run_every=0.5)
 def plot_real_time_wave():
     st.session_state.time += 0.1  # Increment time for real-time simulation
     time_values = np.linspace(0, 10, 500)
     wave_values = generate_waveform(wave_height, wave_length, wave_period, time_values + st.session_state.time)
-    
+
     fig, ax = plt.subplots()
     ax.plot(time_values, wave_values)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Wave Elevation (m)")
     ax.set_title("Real-Time Waveform")
     ax.grid(True)
-    
+
     st.pyplot(fig)
 
 # Function to calculate ship's response to waves
-@st.fragment(run_every=1)
+@st.fragment(run_every=0.5)
 def calculate_wave_response():
     response = ship.calculate_wave_interaction(wave_height, wave_length, wave_period)
-    
+
     fig, ax = plt.subplots()
     ax.bar(["Heave (m)", "Roll Period (s)", "Pitch Period (s)", "Response Amplitude"],
            [response["heave"], response["roll_period"], response["pitch_period"], response["motion_response"]])
     ax.set_title("Ship's Wave Response")
-    
+
     st.pyplot(fig)
 
-# Function to plot 3D model (either default or uploaded STL)
+# Function to plot GZ curve
+@st.fragment(run_every=0.5)
+def plot_gz_curve():
+    # Update ship's time
+    ship.update_time(st.session_state.time)
+    st.subheader("GZ Curve")
+    heel_angles = np.arange(0, 91, 1)  # From 0 to 90 degrees
+    GZ_values = [ship.calculate_righting_arm(angle) for angle in heel_angles]
+
+    fig, ax = plt.subplots()
+    ax.plot(heel_angles, GZ_values)
+    ax.set_xlabel("Heel Angle (degrees)")
+    ax.set_ylabel("Righting Arm (GZ) in meters")
+    ax.set_title("GZ Curve")
+    ax.grid(True)
+    st.pyplot(fig)
 
 # Function to plot the 3D ship model
 def plot_3d_ship_model():
@@ -115,7 +137,7 @@ def plot_3d_ship_model():
 
         # Load the STL file using numpy-stl
         your_mesh = mesh.Mesh.from_file(tmp_file_path)
-        
+
         # Extract vertices and faces
         x = your_mesh.x.flatten()
         y = your_mesh.y.flatten()
@@ -135,9 +157,9 @@ def plot_3d_ship_model():
 
     else:
         # Default ship dimensions
-        length = 30
-        beam = 10
-        draft = -10
+        length = ship.length
+        beam = ship.beam
+        draft = -ship.draft  # Negative for below waterline
 
         # Ship hull (rectangular prism) vertices
         x_hull = [-length/2, length/2, length/2, -length/2, -length/2, length/2, length/2, -length/2]
@@ -159,15 +181,15 @@ def plot_3d_ship_model():
 
         # Ship hull (brown)
         fig.add_trace(go.Mesh3d(
-            x=x_hull, y=y_hull, z=z_hull, 
-            i=i_hull, j=j_hull, k=k_hull, 
+            x=x_hull, y=y_hull, z=z_hull,
+            i=i_hull, j=j_hull, k=k_hull,
             color='brown', opacity=0.7
         ))
 
         # Water surface (blue)
         fig.add_trace(go.Mesh3d(
-            x=x_water, y=y_water, z=z_water, 
-            i=[0], j=[1], k=[2], 
+            x=x_water, y=y_water, z=z_water,
+            i=[0], j=[1], k=[2],
             color='blue', opacity=0.5
         ))
 
@@ -184,28 +206,18 @@ def plot_3d_ship_model():
 
         st.plotly_chart(fig)
 
-# Run the function to plot
-# plot_3d_ship_model()
-# Now call the function in your main app code:
-# plot_3d_ship_model()
+# Now call the functions in your main app code
 
 # Columns for layout
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.subheader("GZ Curve")
-    fig, ax = plt.subplots()
-    ax.plot(heel_angles, GZ_values)
-    ax.set_xlabel("Heel Angle (degrees)")
-    ax.set_ylabel("Righting Arm (GZ) in meters")
-    ax.set_title("GZ Curve")
-    ax.grid(True)
-    st.pyplot(fig)
+    plot_gz_curve()
 
 with col2:
     st.subheader("Real-Time Waveform")
     plot_real_time_wave()
-    
+
 with col3:
     st.subheader("Ship's Response to Waves")
     calculate_wave_response()
