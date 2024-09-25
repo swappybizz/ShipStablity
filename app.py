@@ -4,10 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
+st.set_page_config(page_title="Real-Time Ship Stability and Wave Interaction Simulator", page_icon="🚢")
 # Title of the app
 st.title("Real-Time Ship Stability and Wave Interaction Simulator")
 #config the app icon and title
-st.set_page_config(page_title="Real-Time Ship Stability and Wave Interaction Simulator", page_icon="🚢")
 
 # Sidebar Inputs
 st.sidebar.header("Ship Parameters")
