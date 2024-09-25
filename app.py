@@ -2,12 +2,14 @@ import streamlit as st
 from ship import Ship
 import numpy as np
 import matplotlib.pyplot as plt
-import time
+import plotly.graph_objects as go
+from stl import mesh  # For loading STL files
+import tempfile  # For temporary file handling
 
-st.set_page_config(page_title="Real-Time Ship Stability and Wave Interaction Simulator", page_icon="🚢",layout="wide")
+st.set_page_config(page_title="Real-Time Ship Stability and Wave Interaction Simulator", page_icon="🚢", layout="wide")
+
 # Title of the app
 st.title("Real-Time Ship Stability and Wave Interaction Simulator")
-#config the app icon and title
 
 # Sidebar Inputs
 st.sidebar.header("Ship Parameters")
@@ -18,7 +20,7 @@ displacement = st.sidebar.number_input("Lightship Displacement (tonnes)", 5000.0
 
 # Initialize Ship
 if "ship" not in st.session_state:
-    st.session_state.ship = Ship(length, beam, draft, displacement, block_coefficient=0.7, 
+    st.session_state.ship = Ship(length, beam, draft, displacement, block_coefficient=0.7,
                                  water_plane_area_coefficient=0.85, prismatic_coefficient=0.6, hull_form_factor=1.05)
 
 ship = st.session_state.ship
@@ -54,9 +56,6 @@ if ship.GM <= 0:
 heel_angles = np.arange(0, 91, 1)  # From 0 to 90 degrees
 GZ_values = [ship.calculate_righting_arm(angle) for angle in heel_angles]
 
-# Plot GZ Curve
-
-
 # Sidebar Inputs for Wave Parameters
 st.sidebar.header("Wave Parameters")
 wave_height = st.sidebar.slider("Wave Height (m)", 0.1, 10.0, 2.0)
@@ -90,10 +89,6 @@ def plot_real_time_wave():
     
     st.pyplot(fig)
 
-# Display Real-Time Waveform
-
-
-
 # Function to calculate ship's response to waves
 @st.fragment(run_every=1)
 def calculate_wave_response():
@@ -106,13 +101,99 @@ def calculate_wave_response():
     
     st.pyplot(fig)
 
-# Display Ship's Response to Waves
+# Function to plot 3D model (either default or uploaded STL)
 
+# Function to plot the 3D ship model
+def plot_3d_ship_model():
+    stl_file = st.sidebar.file_uploader("Upload Ship Model (.stl)", type=['stl'])
 
+    if stl_file is not None:
+        # Load the STL file into a temporary file and render it
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            tmp_file.write(stl_file.read())
+            tmp_file_path = tmp_file.name
+
+        # Load the STL file using numpy-stl
+        your_mesh = mesh.Mesh.from_file(tmp_file_path)
+        
+        # Extract vertices and faces
+        x = your_mesh.x.flatten()
+        y = your_mesh.y.flatten()
+        z = your_mesh.z.flatten()
+
+        fig = go.Figure(data=[go.Mesh3d(x=x, y=y, z=z, opacity=0.5)])
+        fig.update_layout(
+            title="3D Ship Model (Uploaded)",
+            scene=dict(
+                xaxis_title="X",
+                yaxis_title="Y",
+                zaxis_title="Z"
+            ),
+            width=700, height=700
+        )
+        st.plotly_chart(fig)
+
+    else:
+        # Default ship dimensions
+        length = 30
+        beam = 10
+        draft = -10
+
+        # Ship hull (rectangular prism) vertices
+        x_hull = [-length/2, length/2, length/2, -length/2, -length/2, length/2, length/2, -length/2]
+        y_hull = [-beam/2, -beam/2, beam/2, beam/2, -beam/2, -beam/2, beam/2, beam/2]
+        z_hull = [0, 0, 0, 0, draft, draft, draft, draft]  # Draft should be negative to represent depth below waterline
+
+        # Water surface (a flat blue plane)
+        x_water = [-length/2, length/2, length/2, -length/2]
+        y_water = [-beam/2, -beam/2, beam/2, beam/2]
+        z_water = [0, 0, 0, 0]  # Water surface at z = 0
+
+        # Define faces for the hull (rectangular prism)
+        i_hull = [0, 0, 0, 1, 4, 5, 6, 7, 4, 2, 3, 6]
+        j_hull = [1, 3, 2, 4, 5, 6, 2, 3, 7, 6, 7, 5]
+        k_hull = [2, 2, 1, 5, 6, 7, 0, 0, 5, 4, 3, 1]
+
+        # Create the 3D mesh for the hull (brown) and water (blue)
+        fig = go.Figure()
+
+        # Ship hull (brown)
+        fig.add_trace(go.Mesh3d(
+            x=x_hull, y=y_hull, z=z_hull, 
+            i=i_hull, j=j_hull, k=k_hull, 
+            color='brown', opacity=0.7
+        ))
+
+        # Water surface (blue)
+        fig.add_trace(go.Mesh3d(
+            x=x_water, y=y_water, z=z_water, 
+            i=[0], j=[1], k=[2], 
+            color='blue', opacity=0.5
+        ))
+
+        # Update the layout of the plot
+        fig.update_layout(
+            title="3D Ship Model with Water",
+            scene=dict(
+                xaxis_title="Length (m)",
+                yaxis_title="Beam (m)",
+                zaxis_title="Draft (m)"
+            ),
+            width=700, height=700
+        )
+
+        st.plotly_chart(fig)
+
+# Run the function to plot
+# plot_3d_ship_model()
+# Now call the function in your main app code:
+# plot_3d_ship_model()
+
+# Columns for layout
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    "GZ Curve"
+    st.subheader("GZ Curve")
     fig, ax = plt.subplots()
     ax.plot(heel_angles, GZ_values)
     ax.set_xlabel("Heel Angle (degrees)")
@@ -122,10 +203,13 @@ with col1:
     st.pyplot(fig)
 
 with col2:
-    "Real-Time Waveform"
+    st.subheader("Real-Time Waveform")
     plot_real_time_wave()
     
 with col3:
-    "Ship's Response to Waves"
+    st.subheader("Ship's Response to Waves")
     calculate_wave_response()
-    
+
+# Display the 3D Ship Visualization
+st.subheader("3D Ship Visualization")
+plot_3d_ship_model()
